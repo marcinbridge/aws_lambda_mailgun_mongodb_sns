@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Mailgun template
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: nodejs12.x
+    CodeUri: dist/
+    Environment:
+      Variables:
+        SNS_TOPIC_ARN: !Ref MailgunSNS
+        MONGO_DB_URL: mongodb+srv://<user>:<password>@test.mongodb.net/test?retryWrites=true&w=majority
+        MAILGUN_SIGNING_KEY: # need to be obtained from the mailgun API site
+        REGION_NAME: eu-central-1
+
+Resources:
+  MailgunSQS:
+    Type: "AWS::SQS::Queue"
+
+  MailgunSNS:
+    Type: AWS::SNS::Topic
+
+  MailgunSubscription:
+    Type: "AWS::SNS::Subscription"
+    Properties:
+      TopicArn: !Ref MailgunSNS
+      Endpoint: !GetAtt
+        - MailgunSQS
+        - Arn
+      Protocol: sqs
+
+  MailgunSQSPolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref MailgunSQS
+      PolicyDocument:
+        Statement:
+          - Action:
+              - "SQS:*"
+            Effect: "Allow"
+            Resource: !GetAtt MailgunSQS.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref MailgunSNS
+            Principal:
+              AWS:
+                - "*"
+
+  MailgunFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: mailgun
+      Description: Save Mailgun response
+      Handler: mailgun/mailgun.create
+      Policies:
+        - AmazonSNSFullAccess
+      Events:
+        Mailgun:
+          Type: Api
+          Properties:
+            Path: /
+            Method: post
+Outputs:
+  WebEndpoint:
+    Description: "API Gateway endpoint URL for Prod stage"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
